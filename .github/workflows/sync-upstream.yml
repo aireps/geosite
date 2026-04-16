@@ -1,0 +1,44 @@
+name: Sync upstream
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge upstream
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/hydraponique/roscomvpn-geosite.git
+          git fetch upstream master
+          BEFORE=$(git rev-parse HEAD)
+          git merge upstream/master --no-edit || {
+            echo "::error::Merge conflict — требуется ручное разрешение"
+            git merge --abort
+            exit 1
+          }
+          AFTER=$(git rev-parse HEAD)
+          if [ "$BEFORE" = "$AFTER" ]; then
+            echo "has_changes=false" >> "$GITHUB_ENV"
+            echo "Upstream не изменился, пропускаем push и сборку"
+          else
+            echo "has_changes=true" >> "$GITHUB_ENV"
+            git push origin master
+          fi
+
+      - name: Trigger build
+        if: env.has_changes == 'true'
+        run: gh workflow run build.yml --ref master
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
