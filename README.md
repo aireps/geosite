@@ -19,4 +19,4 @@ https://cdn.jsdelivr.net/gh/aireps/geosite/release/geosite.dat
 
 ## Sync
 
-Upstream changes merged daily (04:00 UTC) via [sync-upstream.yml](.github/workflows/sync-upstream.yml).
+Upstream changes merged daily (05:00 UTC) via [sync-upstream.yml](.github/workflows/sync-upstream.yml).
