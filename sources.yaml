@@ -15,6 +15,55 @@
 #       path: <path inside repo>     # required when type=github_raw
 #       url: <full URL>              # required when type=url
 #       target: <path under repo>    # required, where to write the file
-#
-# Empty manifest is valid: the workflow runs and commits nothing.
-sources: []
+sources:
+  - name: category-ip-geo-detect
+    # IP geolocation domains, used in xray_sub_formats.py DirectSites.
+    # Was a static local copy; now refreshed from v2fly upstream.
+    type: github_raw
+    repo: v2fly/domain-list-community
+    ref: master
+    path: data/category-ip-geo-detect
+    target: data/category-ip-geo-detect
+
+  - name: ipip
+    # Transitive dependency: data/category-ip-geo-detect contains `include:ipip`.
+    # Without data/ipip the geosite-builder fails on missing include.
+    type: github_raw
+    repo: v2fly/domain-list-community
+    ref: master
+    path: data/ipip
+    target: data/ipip
+
+  - name: yandex
+    # Used in config-ru.json.j2 routing/DNS rules (geosite:yandex → direct).
+    type: github_raw
+    repo: v2fly/domain-list-community
+    ref: master
+    path: data/yandex
+    target: data/yandex
+
+  - name: vk
+    # Used in config-ru.json.j2 routing/DNS rules (geosite:vk → direct).
+    type: github_raw
+    repo: v2fly/domain-list-community
+    ref: master
+    path: data/vk
+    target: data/vk
+
+  - name: category-gov-ru
+    # Used in config-ru.json.j2 routing/DNS rules (geosite:category-gov-ru → direct).
+    type: github_raw
+    repo: v2fly/domain-list-community
+    ref: master
+    path: data/category-gov-ru
+    target: data/category-gov-ru
+
+  - name: category-ads-all
+    # Future-proof: used in config-eu-exit.json.j2 (geosite:category-ads-all → blocked).
+    # EU nodes currently take this category from Loyalsoldier/v2ray-rules-dat. When
+    # EU migrates to the unified aireps geosite.dat — the category will already be ready.
+    type: github_raw
+    repo: v2fly/domain-list-community
+    ref: master
+    path: data/category-ads-all
+    target: data/category-ads-all
