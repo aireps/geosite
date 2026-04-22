@@ -15,6 +15,10 @@
 #       path: <path inside repo>     # required when type=github_raw
 #       url: <full URL>              # required when type=url
 #       target: <path under repo>    # required, where to write the file
+#
+# Important: every `include:NAME` in a fetched file must resolve to a
+# file present in data/ at build time. List transitive dependencies
+# explicitly here.
 sources:
   - name: category-ip-geo-detect
     # IP geolocation domains, used in xray_sub_formats.py DirectSites.
@@ -42,6 +46,14 @@ sources:
     path: data/yandex
     target: data/yandex
 
+  - name: kinopoisk
+    # Transitive dependency: data/yandex contains `include:kinopoisk`.
+    type: github_raw
+    repo: v2fly/domain-list-community
+    ref: master
+    path: data/kinopoisk
+    target: data/kinopoisk
+
   - name: vk
     # Used in config-ru.json.j2 routing/DNS rules (geosite:vk → direct).
     type: github_raw
@@ -58,12 +70,17 @@ sources:
     path: data/category-gov-ru
     target: data/category-gov-ru
 
-  - name: category-ads-all
-    # Future-proof: used in config-eu-exit.json.j2 (geosite:category-ads-all → blocked).
-    # EU nodes currently take this category from Loyalsoldier/v2ray-rules-dat. When
-    # EU migrates to the unified aireps geosite.dat — the category will already be ready.
-    type: github_raw
-    repo: v2fly/domain-list-community
-    ref: master
-    path: data/category-ads-all
-    target: data/category-ads-all
+  # NOTE: data/category-ads-all intentionally NOT included.
+  #
+  # v2fly:category-ads-all includes 9 transitive deps not present in aireps
+  # (adjust, clearbit, growingio, ogury, openx, pubmatic, segment, supersonic,
+  # taboola), and v2fly:category-ads (which it also includes) further
+  # references many @ads-filtered categories that are version-sensitive.
+  # Pulling all of those would dramatically widen scope and risk recurring
+  # build breakage on any upstream addition.
+  #
+  # EU nodes currently use geosite:category-ads-all from
+  # Loyalsoldier/v2ray-rules-dat, which carries its own self-contained
+  # snapshot. When EU eventually migrates to the unified aireps geosite.dat,
+  # add this category in a separate PR together with all transitive deps
+  # validated against a local build.
