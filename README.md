@@ -13,9 +13,9 @@ All categories below are pulled from [v2fly/domain-list-community](https://githu
 | `category-ip-geo-detect` | IP geolocation domains (used in INCY DirectSites) |
 | `ipip` | Transitive dependency of `category-ip-geo-detect` (`include:ipip`) |
 | `yandex` | Yandex services (used in RU split routing → direct) |
+| `kinopoisk` | Transitive dependency of `yandex` (`include:kinopoisk`) |
 | `vk` | VKontakte and Mail.ru services (used in RU split routing → direct) |
 | `category-gov-ru` | Russian government domains (used in RU split routing → direct) |
-| `category-ads-all` | Wide ad/tracker blocklist (used by EU nodes → blocked) |
 
 ## Download
 
