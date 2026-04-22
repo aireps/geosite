@@ -1,0 +1,71 @@
+name: Sync sources
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 6:00 UTC, через час после sync-upstream (5:00)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: aireps-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install deps
+        run: pip install pyyaml requests
+
+      - name: Sync per manifest
+        run: |
+          python3 .github/scripts/sync_sources.py
+          if [ -s /tmp/changed.txt ]; then
+            echo "has_changes=true" >> "$GITHUB_ENV"
+            echo "changed_count=$(wc -l < /tmp/changed.txt)" >> "$GITHUB_ENV"
+          else
+            echo "has_changes=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Commit and push
+        if: env.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          CHANGED=$(tr '\n' ' ' < /tmp/changed.txt)
+          git add data/
+          git commit -m "[sync-sources] update ${{ env.changed_count }} files" \
+                     -m "Files: ${CHANGED}" \
+                     -m "$(cat /tmp/diff_summary.txt 2>/dev/null || true)"
+          git push origin master
+
+      - name: Trigger build (with retry)
+        if: env.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for attempt in 1 2 3; do
+            echo "Attempt ${attempt}: triggering build.yml on master..."
+            if gh workflow run build.yml --ref master; then
+              echo "Build triggered successfully on attempt ${attempt}"
+              exit 0
+            fi
+            if [ "${attempt}" -lt 3 ]; then
+              sleep_sec=$((attempt * 5))
+              echo "Failed, retrying in ${sleep_sec}s..."
+              sleep "${sleep_sec}"
+            fi
+          done
+          echo "::error::Failed to trigger build.yml after 3 attempts"
+          exit 1

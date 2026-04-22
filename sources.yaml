@@ -1,0 +1,20 @@
+# Manifest of external data sources to aggregate into data/.
+#
+# Each source declares where to fetch a file from and where to write it
+# under data/. The .github/scripts/sync_sources.py script reads this file,
+# fetches each source, compares SHA256 with the existing target, and writes
+# changed files atomically. The .github/workflows/sync-sources.yml workflow
+# runs the script daily and commits any changes, then triggers build.yml.
+#
+# Schema:
+#   sources:
+#     - name: <human label, must be unique>
+#       type: github_raw | url
+#       repo: <owner/repo>           # required when type=github_raw
+#       ref: <branch or tag>         # required when type=github_raw
+#       path: <path inside repo>     # required when type=github_raw
+#       url: <full URL>              # required when type=url
+#       target: <path under repo>    # required, where to write the file
+#
+# Empty manifest is valid: the workflow runs and commits nothing.
+sources: []
