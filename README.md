@@ -14,7 +14,7 @@ Fork of [hydraponique/roscomvpn-geosite](https://github.com/hydraponique/roscomv
 ## Download
 
 ```
-https://cdn.jsdelivr.net/gh/aireps/geosite/release/geosite.dat
+https://cdn.jsdelivr.net/gh/aireps/geosite@release/geosite.dat
 ```
 
 ## Sync
