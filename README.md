@@ -6,7 +6,7 @@ Fork of [hydraponique/roscomvpn-geosite](https://github.com/hydraponique/roscomv
 
 ## Added categories
 
-All categories below are pulled from [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) and refreshed daily.
+### From [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)
 
 | Category | Description |
 |---|---|
@@ -16,6 +16,15 @@ All categories below are pulled from [v2fly/domain-list-community](https://githu
 | `kinopoisk` | Transitive dependency of `yandex` (`include:kinopoisk`) |
 | `vk` | VKontakte and Mail.ru services (used in RU split routing → direct) |
 | `category-gov-ru` | Russian government domains (used in RU split routing → direct) |
+
+### From [hagezi/dns-blocklists](https://github.com/hagezi/dns-blocklists)
+
+| Category | Source list | Domains | Description |
+|---|---|---|---|
+| `category-ads-lite` | Light | ~135k | Conservative ad/tracking blocklist (near-zero false positives) |
+| `category-ads-pro` | Pro | ~395k | Comprehensive ad/tracking/malware blocklist |
+
+Lite is a functional subset of Pro. Both are self-contained flat domain lists with no transitive dependencies, refreshed daily.
 
 ## Download
 
