@@ -6,7 +6,7 @@ Fork of [hydraponique/roscomvpn-geosite](https://github.com/hydraponique/roscomv
 
 ## Added categories
 
-All categories below are pulled from [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) and refreshed daily.
+### From [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)
 
 | Category | Description |
 |---|---|
@@ -16,6 +16,16 @@ All categories below are pulled from [v2fly/domain-list-community](https://githu
 | `kinopoisk` | Transitive dependency of `yandex` (`include:kinopoisk`) |
 | `vk` | VKontakte and Mail.ru services (used in RU split routing → direct) |
 | `category-gov-ru` | Russian government domains (used in RU split routing → direct) |
+
+### From [hagezi/dns-blocklists](https://github.com/hagezi/dns-blocklists)
+
+| Category | Source list | Domains | Description |
+|---|---|---|---|
+| `category-ads` | Light | ~135k | Ad/tracking blocklist (near-zero false positives) |
+
+Self-contained flat domain list with no transitive dependencies, refreshed daily.
+
+**Quick switch to Pro (~395k domains):** change `path: domains/light.txt` to `path: domains/pro.txt` in [`sources.yaml`](sources.yaml), push to master, and trigger `sync-sources.yml`. The category name stays the same — no config changes needed anywhere.
 
 ## Download
 

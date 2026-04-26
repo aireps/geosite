@@ -23,6 +23,9 @@ jobs:
       - name: Configure merge driver for release/
         run: git config merge.theirs.driver "cp -f %B %A"
 
+      - name: Configure merge driver for category-ads (ours wins)
+        run: git config merge.ours.driver true
+
       - name: Merge upstream
         run: |
           git config user.name "github-actions[bot]"

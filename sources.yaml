@@ -70,17 +70,13 @@ sources:
     path: data/category-gov-ru
     target: data/category-gov-ru
 
-  # NOTE: data/category-ads-all intentionally NOT included.
-  #
-  # v2fly:category-ads-all includes 9 transitive deps not present in aireps
-  # (adjust, clearbit, growingio, ogury, openx, pubmatic, segment, supersonic,
-  # taboola), and v2fly:category-ads (which it also includes) further
-  # references many @ads-filtered categories that are version-sensitive.
-  # Pulling all of those would dramatically widen scope and risk recurring
-  # build breakage on any upstream addition.
-  #
-  # EU nodes currently use geosite:category-ads-all from
-  # Loyalsoldier/v2ray-rules-dat, which carries its own self-contained
-  # snapshot. When EU eventually migrates to the unified aireps geosite.dat,
-  # add this category in a separate PR together with all transitive deps
-  # validated against a local build.
+  - name: category-ads
+    # Ad/tracking blocklist from hagezi (Light by default).
+    # ~135k domains, daily updates. Self-contained flat list, no includes.
+    # To switch to Pro (~395k): change path to domains/pro.txt
+    # Source: https://github.com/hagezi/dns-blocklists
+    type: github_raw
+    repo: hagezi/dns-blocklists
+    ref: main
+    path: domains/light.txt
+    target: data/category-ads
