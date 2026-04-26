@@ -70,22 +70,13 @@ sources:
     path: data/category-gov-ru
     target: data/category-gov-ru
 
-  - name: category-ads-lite
-    # Conservative ad/tracking blocklist from hagezi (Light).
+  - name: category-ads
+    # Ad/tracking blocklist from hagezi (Light by default).
     # ~135k domains, daily updates. Self-contained flat list, no includes.
+    # To switch to Pro (~395k): change path to domains/pro.txt
     # Source: https://github.com/hagezi/dns-blocklists
     type: github_raw
     repo: hagezi/dns-blocklists
     ref: main
     path: domains/light.txt
-    target: data/category-ads-lite
-
-  - name: category-ads-pro
-    # Comprehensive ad/tracking/malware blocklist from hagezi (Pro).
-    # ~395k domains, daily updates. Self-contained flat list, no includes.
-    # Source: https://github.com/hagezi/dns-blocklists
-    type: github_raw
-    repo: hagezi/dns-blocklists
-    ref: main
-    path: domains/pro.txt
-    target: data/category-ads-pro
+    target: data/category-ads

@@ -21,10 +21,11 @@ Fork of [hydraponique/roscomvpn-geosite](https://github.com/hydraponique/roscomv
 
 | Category | Source list | Domains | Description |
 |---|---|---|---|
-| `category-ads-lite` | Light | ~135k | Conservative ad/tracking blocklist (near-zero false positives) |
-| `category-ads-pro` | Pro | ~395k | Comprehensive ad/tracking/malware blocklist |
+| `category-ads` | Light | ~135k | Ad/tracking blocklist (near-zero false positives) |
 
-Lite is a functional subset of Pro. Both are self-contained flat domain lists with no transitive dependencies, refreshed daily.
+Self-contained flat domain list with no transitive dependencies, refreshed daily.
+
+**Quick switch to Pro (~395k domains):** change `path: domains/light.txt` to `path: domains/pro.txt` in [`sources.yaml`](sources.yaml), push to master, and trigger `sync-sources.yml`. The category name stays the same — no config changes needed anywhere.
 
 ## Download
 
