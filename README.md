@@ -29,9 +29,21 @@ Self-contained flat domain list with no transitive dependencies, refreshed daily
 
 ## Download
 
+### Full (all categories)
+
 ```
 https://cdn.jsdelivr.net/gh/aireps/geosite@release/geosite.dat
 ```
+
+For nodes and routers that use `geosite:category-ads` in routing rules.
+
+### Lite (without category-ads)
+
+```
+https://cdn.jsdelivr.net/gh/aireps/geosite@release/geosite-lite.dat
+```
+
+For mobile clients where ads are blocked server-side. Same categories minus `category-ads` (~75 KB vs ~1.8 MB).
 
 ## Sync
 
