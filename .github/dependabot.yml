@@ -1,0 +1,14 @@
+# Keeps the actions in .github/workflows current, including the one pinned to a
+# commit SHA: Dependabot bumps the SHA and rewrites the version comment beside it.
+#
+# This repository is a fork, and version updates stay off on forks even with this
+# file committed, so that pulling a dependabot.yml from upstream cannot switch them
+# on by surprise. Someone has to enable them once by hand, under
+# Settings -> Security -> Advanced Security -> Dependabot version updates.
+# Until that happens nothing here runs and the pinned action simply stays put.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
