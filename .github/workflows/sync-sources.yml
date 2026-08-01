@@ -87,3 +87,11 @@ jobs:
             echo "::error::One or more sources failed to sync, see the Sync step log"
             exit 1
           fi
+
+      # Last, so that a source failure reported by the step above reaches it too.
+      - name: Notify on failure
+        if: failure()
+        uses: ./.github/actions/notify-failure
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}

@@ -24,6 +24,8 @@ CHANGED_LOG = pathlib.Path("/tmp/changed.txt")
 DIFF_LOG = pathlib.Path("/tmp/diff_summary.txt")
 TIMEOUT_SECONDS = 30
 MARKUP_PREFIXES = (b"<!doctype", b"<html", b"<?xml")
+ALLOWED_DOMAIN_BYTES = frozenset(b"abcdefghijklmnopqrstuvwxyz0123456789.-")
+KNOWN_RULE_TYPES = frozenset({"domain", "full", "keyword", "regexp"})
 
 
 def build_url(src: dict) -> str:
@@ -60,6 +62,41 @@ def fetch(url: str, min_bytes: int = 0) -> bytes:
     if min_bytes and len(data) < min_bytes:
         raise ValueError(f"too small: {len(data)} bytes, expected at least {min_bytes}")
     return data
+
+
+def validate_domain_list(data: bytes) -> None:
+    """Reject a payload the geosite generator would refuse to parse.
+
+    Mirrors the line handling in v2fly/domain-list-community: a line is cut at
+    the first '#', a leading '<type>:' selects the rule type and its absence
+    means "domain", and every rule but a regexp is lowercased and then checked
+    byte by byte against a-z, 0-9, '.' and '-'.
+
+    Worth the duplication because of how the generator reacts: the first bad
+    line makes it return an error and abandon the run, so one stray character
+    in one source takes down every category at build time, in a workflow that
+    has already committed the file. Checking here keeps that file out of the
+    commit instead.
+    """
+    text = data.decode("utf-8", errors="surrogateescape")
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        head, separator, tail = line.partition(":")
+        rule_type, rule = (head.lower(), tail) if separator else ("domain", line)
+        if rule_type == "include":
+            continue
+        if rule_type not in KNOWN_RULE_TYPES:
+            raise ValueError(f"line {lineno}: unknown rule type {rule_type!r}")
+        fields = rule.split()
+        if not fields:
+            raise ValueError(f"line {lineno}: empty rule")
+        if rule_type == "regexp":
+            continue
+        value = fields[0].lower().encode("utf-8", errors="surrogateescape")
+        if not ALLOWED_DOMAIN_BYTES.issuperset(value):
+            raise ValueError(f"line {lineno}: invalid domain {fields[0]!r}")
 
 
 def write_atomic(target: pathlib.Path, data: bytes) -> None:
@@ -100,6 +137,7 @@ def main() -> int:
         try:
             url = build_url(src)
             data = fetch(url, int(src.get("min_bytes") or 0))
+            validate_domain_list(data)
         except Exception as exc:
             failures.append(f"{name}: {exc}")
             continue

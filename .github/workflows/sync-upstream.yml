@@ -66,3 +66,10 @@ jobs:
           done
           echo "::error::Failed to trigger build.yml after 3 attempts"
           exit 1
+
+      - name: Notify on failure
+        if: failure()
+        uses: ./.github/actions/notify-failure
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}

@@ -95,21 +95,45 @@ jobs:
           cp -f /tmp/out-lite/dlc.dat ./geosite-lite.dat
 
       - name: Install Mihomo (latest stable)
+        # The release carries several .deb per architecture: a baseline one and
+        # microarchitecture builds tagged -v1-, -v2-, -v3-. Match the baseline
+        # exactly, since picking the first of a loose match left the choice to
+        # whatever order the API happened to return, and a -v3- build would need
+        # instruction sets the runner is not guaranteed to have.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           ARCH=$(dpkg --print-architecture)
-          LATEST_URL=$(${{ env.CURL }} https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
-            | grep -oP '"browser_download_url":\s*"\K[^"]*mihomo-linux-'"$ARCH"'-[^"]*\.deb(?=")' \
-            | head -n1)
-          echo "Downloading: $LATEST_URL"
-          ${{ env.CURL }} -o /tmp/mihomo.deb "$LATEST_URL"
+          url=$(gh api repos/MetaCubeX/mihomo/releases/latest \
+            --jq '.assets[] | select(.name | test("^mihomo-linux-'"$ARCH"'-v[0-9]+\\.[0-9]+\\.[0-9]+\\.deb$")) | .browser_download_url')
+          if [ -z "$url" ]; then
+            echo "::error::mihomo: no baseline .deb for $ARCH in the latest release"
+            gh api repos/MetaCubeX/mihomo/releases/latest --jq '.tag_name, (.assets[].name)'
+            exit 1
+          fi
+          echo "Downloading: $url"
+          ${{ env.CURL }} -o /tmp/mihomo.deb "$url"
           sudo dpkg -i /tmp/mihomo.deb || sudo apt-get install -f -y
           rm -f /tmp/mihomo.deb
 
       - name: Install sing-box
+        # Fetch the pinned .deb rather than piping an installer script into a
+        # root shell: the version was already pinned, but the script itself was
+        # downloaded fresh on every run and executed unchecked.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SING_BOX_VERSION: "1.12.12"
         run: |
           set -euo pipefail
-          ${{ env.CURL }} https://sing-box.app/install.sh | sudo -E sh -s -- --version 1.12.12
+          ARCH=$(dpkg --print-architecture)
+          gh release download "v${SING_BOX_VERSION}" \
+            --repo SagerNet/sing-box \
+            --pattern "sing-box_${SING_BOX_VERSION}_linux_${ARCH}.deb" \
+            --output /tmp/sing-box.deb --clobber
+          sudo dpkg -i /tmp/sing-box.deb || sudo apt-get install -f -y
+          rm -f /tmp/sing-box.deb
+          sing-box version
 
       - name: Build .mrs
         run: |
@@ -348,3 +372,10 @@ jobs:
             ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@test/release/${rel}"
             ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@test-release/${rel}"
           done
+
+      - name: Notify on failure
+        if: failure()
+        uses: ./.github/actions/notify-failure
+        with:
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
