@@ -51,7 +51,7 @@ jobs:
 
       - name: Create Tag
         if: github.ref_name == 'master'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const { DAILY_TAG } = process.env
