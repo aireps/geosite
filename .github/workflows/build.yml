@@ -25,12 +25,12 @@ jobs:
       CURL: "curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused"
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
       - name: Checkout geosite builder
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: v2fly/domain-list-community
           path: community
