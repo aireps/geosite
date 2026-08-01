@@ -44,7 +44,7 @@ jobs:
             echo "Upstream не изменился, пропускаем push и сборку"
           else
             echo "has_changes=true" >> "$GITHUB_ENV"
-            git push origin master
+            git push origin HEAD
           fi
 
       - name: Trigger build (with retry)

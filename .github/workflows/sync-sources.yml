@@ -58,7 +58,7 @@ jobs:
           git commit -m "[sync-sources] update ${{ env.changed_count }} files" \
                      -m "Files: ${CHANGED}" \
                      -m "$(cat /tmp/diff_summary.txt 2>/dev/null || true)"
-          git push origin master
+          git push origin HEAD
 
       - name: Trigger build (with retry)
         if: env.has_changes == 'true'
