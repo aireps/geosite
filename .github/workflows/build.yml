@@ -279,7 +279,7 @@ jobs:
 
       - name: MASTER Publish GitHub Release
         if: github.ref_name == 'master'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.DAILY_TAG }}
           name: ${{ env.DAILY_TAG }}
