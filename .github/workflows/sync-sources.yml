@@ -29,8 +29,18 @@ jobs:
         run: pip install pyyaml requests
 
       - name: Sync per manifest
+        # Шаг не должен падать сразу: скрипт возвращает 1, если отказал хотя бы
+        # один источник, а шелл по умолчанию идёт с `bash -e` и оборвал бы всё
+        # на этой строке. Тогда результаты живых источников, уже записанные
+        # скриптом в /tmp/changed.txt, были бы выброшены. Отказ запоминается
+        # маркер-файлом и роняет прогон последним шагом, после коммита.
         run: |
+          rm -f /tmp/sync_failed
+          set +e
           python3 .github/scripts/sync_sources.py
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then touch /tmp/sync_failed; fi
           if [ -s /tmp/changed.txt ]; then
             echo "has_changes=true" >> "$GITHUB_ENV"
             echo "changed_count=$(wc -l < /tmp/changed.txt)" >> "$GITHUB_ENV"
@@ -69,3 +79,11 @@ jobs:
           done
           echo "::error::Failed to trigger build.yml after 3 attempts"
           exit 1
+
+      - name: Fail if any source failed
+        if: always()
+        run: |
+          if [ -f /tmp/sync_failed ]; then
+            echo "::error::One or more sources failed to sync, see the Sync step log"
+            exit 1
+          fi

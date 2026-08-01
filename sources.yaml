@@ -15,10 +15,19 @@
 #       path: <path inside repo>     # required when type=github_raw
 #       url: <full URL>              # required when type=url
 #       target: <path under repo>    # required, where to write the file
+#       min_bytes: <int>             # optional, reject responses smaller than this
 #
 # Important: every `include:NAME` in a fetched file must resolve to a
 # file present in data/ at build time. List transitive dependencies
 # explicitly here.
+#
+# About min_bytes: the sync script rejects a response that looks like markup
+# (an HTML or XML error page served with 200) and, when min_bytes is set, one
+# that is implausibly small. Thresholds follow the "clearly too small to be
+# real" rule rather than tracking the expected size, so that a legitimate
+# upstream shrink does not trip them. For the tiny lists the size check is
+# weak by nature — an error page is larger than the file itself — and the
+# markup check is what actually guards them.
 sources:
   - name: category-ip-geo-detect
     # IP geolocation domains, used in xray_sub_formats.py DirectSites.
@@ -28,6 +37,7 @@ sources:
     ref: master
     path: data/category-ip-geo-detect
     target: data/category-ip-geo-detect
+    min_bytes: 600
 
   - name: ipip
     # Transitive dependency: data/category-ip-geo-detect contains `include:ipip`.
@@ -37,6 +47,7 @@ sources:
     ref: master
     path: data/ipip
     target: data/ipip
+    min_bytes: 10
 
   - name: yandex
     # Used in config-ru.json.j2 routing/DNS rules (geosite:yandex → direct).
@@ -45,6 +56,7 @@ sources:
     ref: master
     path: data/yandex
     target: data/yandex
+    min_bytes: 600
 
   - name: kinopoisk
     # Transitive dependency: data/yandex contains `include:kinopoisk`.
@@ -53,6 +65,7 @@ sources:
     ref: master
     path: data/kinopoisk
     target: data/kinopoisk
+    min_bytes: 15
 
   - name: vk
     # Used in config-ru.json.j2 routing/DNS rules (geosite:vk → direct).
@@ -61,6 +74,7 @@ sources:
     ref: master
     path: data/vk
     target: data/vk
+    min_bytes: 250
 
   - name: category-gov-ru
     # Used in config-ru.json.j2 routing/DNS rules (geosite:category-gov-ru → direct).
@@ -69,14 +83,24 @@ sources:
     ref: master
     path: data/category-gov-ru
     target: data/category-gov-ru
+    min_bytes: 2000
 
   - name: category-ads
     # Ad/tracking blocklist from hagezi (Light by default).
-    # ~135k domains, daily updates. Self-contained flat list, no includes.
-    # To switch to Pro (~395k): change path to domains/pro.txt
+    # ~42k base domains, daily updates. Self-contained flat list, no includes.
+    # To switch to a wider tier: multi-onlydomains (~181k), pro-onlydomains
+    # (~216k) or pro.plus-onlydomains (~239k) in the same directory.
     # Source: https://github.com/hagezi/dns-blocklists
+    #
+    # Upstream removed the domains/ directory around 31 Jul 2026, which broke
+    # the previous path domains/light.txt with a 404. The plain-domain list now
+    # lives under wildcard/ as *-onlydomains.txt. It carries base domains only,
+    # which is the right shape here: the geosite generator maps a prefix-less
+    # line to Domain_RootDomain, and Xray matches that against the domain plus
+    # any subdomain, so enumerating subdomains is redundant.
     type: github_raw
     repo: hagezi/dns-blocklists
     ref: main
-    path: domains/light.txt
+    path: wildcard/light-onlydomains.txt
     target: data/category-ads
+    min_bytes: 300000

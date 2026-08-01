@@ -23,6 +23,7 @@ MANIFEST = ROOT / "sources.yaml"
 CHANGED_LOG = pathlib.Path("/tmp/changed.txt")
 DIFF_LOG = pathlib.Path("/tmp/diff_summary.txt")
 TIMEOUT_SECONDS = 30
+MARKUP_PREFIXES = (b"<!doctype", b"<html", b"<?xml")
 
 
 def build_url(src: dict) -> str:
@@ -41,10 +42,24 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def fetch(url: str) -> bytes:
+def fetch(url: str, min_bytes: int = 0) -> bytes:
+    """Download a source and reject responses that are obviously not data.
+
+    A 404 is caught by raise_for_status, but an error page served with 200
+    would otherwise be written into data/ and only surface later, as a build
+    failure in the geosite generator. The two checks here stay deliberately
+    shallow: they never parse the domain-list grammar, which lives in
+    v2fly/domain-list-community and would drift if mirrored in Python.
+    """
     resp = requests.get(url, timeout=TIMEOUT_SECONDS)
     resp.raise_for_status()
-    return resp.content
+    data = resp.content
+    head = data[:512].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if head.startswith(MARKUP_PREFIXES):
+        raise ValueError(f"looks like markup, not a data file ({len(data)} bytes)")
+    if min_bytes and len(data) < min_bytes:
+        raise ValueError(f"too small: {len(data)} bytes, expected at least {min_bytes}")
+    return data
 
 
 def write_atomic(target: pathlib.Path, data: bytes) -> None:
@@ -84,7 +99,7 @@ def main() -> int:
 
         try:
             url = build_url(src)
-            data = fetch(url)
+            data = fetch(url, int(src.get("min_bytes") or 0))
         except Exception as exc:
             failures.append(f"{name}: {exc}")
             continue
