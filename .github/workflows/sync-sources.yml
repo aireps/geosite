@@ -88,10 +88,30 @@ jobs:
             exit 1
           fi
 
-      # Last, so that a source failure reported by the step above reaches it too.
-      - name: Notify on failure
-        if: failure()
-        uses: ./.github/actions/notify-failure
-        with:
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
+  # Separate job so that a failure in checkout itself still reaches Telegram:
+  # failure() holds here whenever any ancestor job failed, whatever the reason,
+  # and nothing in this job needs the repository to be present.
+  notify:
+    needs: sync
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Send Telegram message
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -uo pipefail
+          if [ -z "${TELEGRAM_TOKEN}" ] || [ -z "${TELEGRAM_CHAT_ID}" ]; then
+            echo "::warning::Telegram secrets are unset, skipping the failure notification"
+            exit 0
+          fi
+          text="${GITHUB_REPOSITORY}: ${GITHUB_WORKFLOW} failed
+          ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if ! curl -fsS --retry 3 --retry-delay 2 -o /dev/null \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${text}"; then
+            echo "::warning::Could not deliver the Telegram notification"
+          fi

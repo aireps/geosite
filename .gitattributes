@@ -1,2 +1,9 @@
 release/** merge=theirs
 data/category-ads merge=ours
+
+# Our workflows have diverged from upstream's, and sync-upstream merges the
+# whole tree. Without this a change to their build.yml would conflict and abort
+# the nightly merge, stalling data updates too. The /** form is required: in an
+# attributes file a bare directory pattern does not match paths inside it.
+# Only takes effect where merge.ours.driver is defined, which sync-upstream does.
+.github/** merge=ours

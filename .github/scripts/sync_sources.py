@@ -26,6 +26,82 @@ TIMEOUT_SECONDS = 30
 MARKUP_PREFIXES = (b"<!doctype", b"<html", b"<?xml")
 ALLOWED_DOMAIN_BYTES = frozenset(b"abcdefghijklmnopqrstuvwxyz0123456789.-")
 KNOWN_RULE_TYPES = frozenset({"domain", "full", "keyword", "regexp"})
+MANIFEST_COMMON_KEYS = frozenset({"name", "type", "target", "min_bytes"})
+MANIFEST_TYPE_KEYS = {
+    "github_raw": frozenset({"repo", "ref", "path"}),
+    "url": frozenset({"url"}),
+}
+
+
+def validate_manifest(sources: object) -> None:
+    """Reject a malformed manifest before a single source is fetched.
+
+    Deliberately harsher than the per-source handling in main(). A source that
+    will not download is an outside event, so it is isolated and the rest still
+    sync; a manifest that does not hold together is our own file, edited by hand
+    minutes ago, and its remaining entries earn no trust from that point on.
+
+    Unknown keys are errors rather than something to ignore, because the failure
+    worth catching here is a typo in an optional one: `min_byte` instead of
+    `min_bytes` turns the size check off and leaves no trace anywhere.
+    """
+    if not isinstance(sources, list) or not sources:
+        raise ValueError("sources: expected a non-empty list")
+
+    problems: list[str] = []
+    seen_names: set[str] = set()
+    seen_targets: set[str] = set()
+
+    for index, src in enumerate(sources):
+        where = f"sources[{index}]"
+        if not isinstance(src, dict):
+            problems.append(f"{where}: expected a mapping, got {type(src).__name__}")
+            continue
+
+        name = src.get("name")
+        if isinstance(name, str) and name:
+            where = f"{where} ({name})"
+            if name in seen_names:
+                problems.append(f"{where}: duplicate name")
+            seen_names.add(name)
+        else:
+            problems.append(f"{where}: missing or empty name")
+
+        target = src.get("target")
+        if isinstance(target, str) and target:
+            if target in seen_targets:
+                problems.append(f"{where}: duplicate target {target!r}")
+            seen_targets.add(target)
+        else:
+            problems.append(f"{where}: missing or empty target")
+
+        kind = src.get("type")
+        type_keys = MANIFEST_TYPE_KEYS.get(kind)
+        if type_keys is None:
+            # Without a known type there is no way to say which keys belong
+            # here, so skip the per-type checks instead of reporting every
+            # remaining key as unknown.
+            problems.append(
+                f"{where}: type must be one of {sorted(MANIFEST_TYPE_KEYS)}, got {kind!r}"
+            )
+        else:
+            for key in sorted(type_keys):
+                value = src.get(key)
+                if not isinstance(value, str) or not value:
+                    problems.append(f"{where}: missing or empty {key}")
+            for key in sorted(set(src) - (MANIFEST_COMMON_KEYS | type_keys)):
+                problems.append(f"{where}: unknown key {key!r}")
+
+        if "min_bytes" in src:
+            min_bytes = src["min_bytes"]
+            # bool is a subclass of int, and `min_bytes: true` is never intended.
+            if isinstance(min_bytes, bool) or not isinstance(min_bytes, int) or min_bytes < 0:
+                problems.append(
+                    f"{where}: min_bytes must be a non-negative integer, got {min_bytes!r}"
+                )
+
+    if problems:
+        raise ValueError("\n".join(problems))
 
 
 def build_url(src: dict) -> str:
@@ -45,13 +121,13 @@ def sha256(data: bytes) -> str:
 
 
 def fetch(url: str, min_bytes: int = 0) -> bytes:
-    """Download a source and reject responses that are obviously not data.
+    """Download a source and reject a response that is not data at all.
 
     A 404 is caught by raise_for_status, but an error page served with 200
-    would otherwise be written into data/ and only surface later, as a build
-    failure in the geosite generator. The two checks here stay deliberately
-    shallow: they never parse the domain-list grammar, which lives in
-    v2fly/domain-list-community and would drift if mirrored in Python.
+    would otherwise be written into data/. These two checks only answer "does
+    this resemble a data file"; whether the generator will accept its contents
+    is validate_domain_list's question, and the two are kept apart so that a
+    change to the grammar never touches the transport code.
     """
     resp = requests.get(url, timeout=TIMEOUT_SECONDS)
     resp.raise_for_status()
@@ -77,6 +153,12 @@ def validate_domain_list(data: bytes) -> None:
     in one source takes down every category at build time, in a workflow that
     has already committed the file. Checking here keeps that file out of the
     commit instead.
+
+    Running the real generator would remove the risk of this copy drifting, and
+    it is not even slow, but it reads data/ as a whole and would therefore block
+    all seven sources over one bad file. Per-source isolation is worth more than
+    exactness here, and drift is not silent either way: too strict and the sync
+    fails naming the file and line, too lax and the build fails as it used to.
     """
     text = data.decode("utf-8", errors="surrogateescape")
     for lineno, raw in enumerate(text.splitlines(), 1):
@@ -121,6 +203,14 @@ def main() -> int:
 
     CHANGED_LOG.write_text("")
     DIFF_LOG.write_text("")
+
+    try:
+        validate_manifest(sources)
+    except ValueError as exc:
+        print("manifest is not usable:", file=sys.stderr)
+        for line in str(exc).splitlines():
+            print(f"  {line}", file=sys.stderr)
+        return 1
 
     changed: list[str] = []
     diff_lines: list[str] = []

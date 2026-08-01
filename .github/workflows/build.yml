@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CURL: "curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused"
+      SING_BOX_VERSION: "1.12.12"
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v7
@@ -123,7 +124,6 @@ jobs:
         # downloaded fresh on every run and executed unchecked.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SING_BOX_VERSION: "1.12.12"
         run: |
           set -euo pipefail
           ARCH=$(dpkg --print-architecture)
@@ -134,6 +134,22 @@ jobs:
           sudo dpkg -i /tmp/sing-box.deb || sudo apt-get install -f -y
           rm -f /tmp/sing-box.deb
           sing-box version
+
+      - name: Note if sing-box is behind
+        # Dependabot reads `uses:` references only, so the pin above is invisible
+        # to it and nothing will ever propose moving it. Report into the run
+        # summary rather than as an annotation: an empty annotation list is how a
+        # clean run is recognised, and a standing notice would spoil that signal.
+        # Never fails the build; a missing answer is not worth losing a release.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          latest=$(gh release view --repo SagerNet/sing-box --json tagName --jq .tagName 2>/dev/null || true)
+          latest="${latest#v}"
+          if [ -n "$latest" ] && [ "$latest" != "$SING_BOX_VERSION" ]; then
+            echo "sing-box is pinned at ${SING_BOX_VERSION}, latest release is ${latest}" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Build .mrs
         run: |
@@ -373,9 +389,30 @@ jobs:
             ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@test-release/${rel}"
           done
 
-      - name: Notify on failure
-        if: failure()
-        uses: ./.github/actions/notify-failure
-        with:
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          chat-id: ${{ secrets.TELEGRAM_CHAT_ID }}
+  # Separate job so that a failure in checkout itself still reaches Telegram:
+  # failure() holds here whenever any ancestor job failed, whatever the reason,
+  # and nothing in this job needs the repository to be present.
+  notify:
+    needs: build
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Send Telegram message
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -uo pipefail
+          if [ -z "${TELEGRAM_TOKEN}" ] || [ -z "${TELEGRAM_CHAT_ID}" ]; then
+            echo "::warning::Telegram secrets are unset, skipping the failure notification"
+            exit 0
+          fi
+          text="${GITHUB_REPOSITORY}: ${GITHUB_WORKFLOW} failed
+          ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if ! curl -fsS --retry 3 --retry-delay 2 -o /dev/null \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${text}"; then
+            echo "::warning::Could not deliver the Telegram notification"
+          fi
