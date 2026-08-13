@@ -14,6 +14,8 @@
 #       ref: <branch or tag>         # required when type=github_raw
 #       path: <path inside repo>     # required when type=github_raw
 #       url: <full URL>              # required when type=url
+#       fallback_urls:               # optional mirrors, tried in order
+#         - <full URL>
 #       target: <path under repo>    # required, where to write the file
 #       min_bytes: <int>             # optional, reject responses smaller than this
 #
@@ -98,9 +100,14 @@ sources:
     # which is the right shape here: the geosite generator maps a prefix-less
     # line to Domain_RootDomain, and Xray matches that against the domain plus
     # any subdomain, so enumerating subdomains is redundant.
+    #
+    # The official GitLab mirror keeps this source available when the hagezi
+    # GitHub account or raw.githubusercontent.com is temporarily unavailable.
     type: github_raw
     repo: hagezi/dns-blocklists
     ref: main
     path: wildcard/light-onlydomains.txt
+    fallback_urls:
+      - https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/light-onlydomains.txt
     target: data/category-ads
     min_bytes: 300000

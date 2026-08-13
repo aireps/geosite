@@ -26,7 +26,9 @@ TIMEOUT_SECONDS = 30
 MARKUP_PREFIXES = (b"<!doctype", b"<html", b"<?xml")
 ALLOWED_DOMAIN_BYTES = frozenset(b"abcdefghijklmnopqrstuvwxyz0123456789.-")
 KNOWN_RULE_TYPES = frozenset({"domain", "full", "keyword", "regexp"})
-MANIFEST_COMMON_KEYS = frozenset({"name", "type", "target", "min_bytes"})
+MANIFEST_COMMON_KEYS = frozenset(
+    {"name", "type", "target", "min_bytes", "fallback_urls"}
+)
 MANIFEST_TYPE_KEYS = {
     "github_raw": frozenset({"repo", "ref", "path"}),
     "url": frozenset({"url"}),
@@ -100,6 +102,18 @@ def validate_manifest(sources: object) -> None:
                     f"{where}: min_bytes must be a non-negative integer, got {min_bytes!r}"
                 )
 
+        if "fallback_urls" in src:
+            fallback_urls = src["fallback_urls"]
+            if not isinstance(fallback_urls, list) or not fallback_urls:
+                problems.append(f"{where}: fallback_urls must be a non-empty list")
+            else:
+                for fallback_index, url in enumerate(fallback_urls):
+                    if not isinstance(url, str) or not url:
+                        problems.append(
+                            f"{where}: fallback_urls[{fallback_index}] "
+                            "must be a non-empty string"
+                        )
+
     if problems:
         raise ValueError("\n".join(problems))
 
@@ -138,6 +152,22 @@ def fetch(url: str, min_bytes: int = 0) -> bytes:
     if min_bytes and len(data) < min_bytes:
         raise ValueError(f"too small: {len(data)} bytes, expected at least {min_bytes}")
     return data
+
+
+def fetch_source(src: dict, min_bytes: int = 0) -> tuple[bytes, str, list[str]]:
+    """Fetch and validate a source, trying its mirrors in declared order."""
+    urls = [build_url(src), *src.get("fallback_urls", [])]
+    errors: list[str] = []
+
+    for url in urls:
+        try:
+            data = fetch(url, min_bytes)
+            validate_domain_list(data)
+            return data, url, errors
+        except Exception as exc:
+            errors.append(f"{url}: {exc}")
+
+    raise RuntimeError("all URLs failed: " + " | ".join(errors))
 
 
 def validate_domain_list(data: bytes) -> None:
@@ -214,6 +244,7 @@ def main() -> int:
 
     changed: list[str] = []
     diff_lines: list[str] = []
+    fallback_lines: list[str] = []
     failures: list[str] = []
 
     for src in sources:
@@ -225,12 +256,17 @@ def main() -> int:
         target = ROOT / target_rel
 
         try:
-            url = build_url(src)
-            data = fetch(url, int(src.get("min_bytes") or 0))
-            validate_domain_list(data)
+            data, used_url, source_errors = fetch_source(
+                src, int(src.get("min_bytes") or 0)
+            )
         except Exception as exc:
             failures.append(f"{name}: {exc}")
             continue
+        if source_errors:
+            fallback_lines.append(
+                f"{name}: using {used_url} after {len(source_errors)} failed attempt(s): "
+                + " | ".join(source_errors)
+            )
 
         new_sha = sha256(data)
         if target.exists():
@@ -249,9 +285,14 @@ def main() -> int:
         CHANGED_LOG.write_text("\n".join(changed) + "\n")
         DIFF_LOG.write_text("\n".join(diff_lines) + "\n")
 
-    print(f"sources: {len(sources)}, changed: {len(changed)}, failures: {len(failures)}")
+    print(
+        f"sources: {len(sources)}, changed: {len(changed)}, "
+        f"fallbacks: {len(fallback_lines)}, failures: {len(failures)}"
+    )
     for line in diff_lines:
         print(f"  CHANGED {line}")
+    for line in fallback_lines:
+        print(f"  FALLBACK {line}", file=sys.stderr)
     for line in failures:
         print(f"  FAIL    {line}", file=sys.stderr)
 
