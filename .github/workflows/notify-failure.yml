@@ -1,0 +1,122 @@
+name: Notify failure
+
+# Reusable workflow: the notify job of build.yml, sync-sources.yml and
+# sync-upstream.yml calls it when an earlier job of the same run failed. It
+# sends one Telegram message that names every failed job and step and quotes
+# the error lines from each failed job's log. Without the secrets it warns and
+# exits. The details are best effort: if the API answers with an error, the
+# message still carries the repository, the workflow and the run link.
+#
+# Values reach the script through env: only, never as expressions inside
+# run:. An expression is pasted into the script text before the shell parses
+# it, and job logs carry text from third-party lists.
+on:
+  workflow_call:
+    secrets:
+      TELEGRAM_BOT_TOKEN:
+        required: false
+      TELEGRAM_CHAT_ID:
+        required: false
+
+jobs:
+  send:
+    name: Send Telegram message
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Send Telegram message
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          # In a called workflow the github context is the caller's, so these
+          # describe the run that failed.
+          API_URL: ${{ github.api_url }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -uo pipefail
+          if [ -z "${TELEGRAM_TOKEN}" ] || [ -z "${TELEGRAM_CHAT_ID}" ]; then
+            echo "::warning::Telegram secrets are unset, skipping the failure notification"
+            exit 0
+          fi
+          # The runner starts this script with bash -e. Everything below is
+          # best effort, so no failure in it may stop the message.
+          set +e
+
+          # Prints a short failure excerpt from a job log on stdin. Skips step
+          # headers (##[group] ... ##[endgroup]: command echo, shell, env),
+          # strips timestamps and ANSI codes, then keeps known failure lines
+          # anywhere in the log plus the last 3 output lines before the first
+          # ##[error].
+          extract_errors() {
+            local esc=$'\033'
+            sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //' \
+              | sed -E "s/${esc}\[[0-9;]*[A-Za-z]//g" \
+              | awk '
+                  /^##\[group\]/    { hdr = 1; next }
+                  /^##\[endgroup\]/ { hdr = 0; next }
+                  hdr { next }
+                  /^##\[error\]/ {
+                    if (!seen++) { n = (cnt < 3 ? cnt : 3); for (i = cnt - n; i < cnt; i++) print buf[i % 3] }
+                    print; next
+                  }
+                  /\[Fatal\]|^ +FAIL +|^(FAIL|ERROR): |^CONFLICT / { print }
+                  NF { buf[cnt % 3] = $0; cnt++ }
+                ' \
+              | awk '!dup[$0]++'
+          }
+
+          # No X-GitHub-Api-Version: a pinned version gets 410 Gone once GitHub
+          # retires it, while an unversioned request moves on to the next
+          # supported one.
+          api=(-H "Authorization: Bearer ${GH_TOKEN}"
+               -H "Accept: application/vnd.github+json")
+          actions="${API_URL}/repos/${REPOSITORY}/actions"
+
+          text="${REPOSITORY}: ${WORKFLOW} failed
+          ${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
+
+          if jobs=$(curl -fsS --retry 3 --retry-delay 2 "${api[@]}" \
+              "${actions}/runs/${RUN_ID}/attempts/${RUN_ATTEMPT}/jobs?per_page=100"); then
+            failed=$(printf '%s' "$jobs" | jq -r '
+                .jobs[]? | select(.conclusion == "failure")
+                | [(.id | tostring), .name,
+                   ([.steps[]? | select(.conclusion == "failure") | .name] | join(", "))]
+                | @tsv') || failed=""
+          else
+            echo "::warning::Could not list the jobs of this run, sending the short message"
+            failed=""
+          fi
+
+          while IFS=$'\t' read -r job_id job_name step_names; do
+            [ -n "$job_id" ] || continue
+            title="$job_name"
+            if [ -n "$step_names" ]; then title="${title} / ${step_names}"; fi
+            text+=$'\n\n'"${title}"
+            # The log endpoint answers with a redirect to a link that is valid
+            # for one minute, so follow it right away.
+            if log=$(curl -fsSL --retry 3 --retry-delay 2 "${api[@]}" "${actions}/jobs/${job_id}/logs"); then
+              excerpt=$(printf '%s\n' "$log" | extract_errors)
+              if [ -n "$excerpt" ]; then text+=$'\n'"${excerpt}"; fi
+            else
+              echo "::warning::Could not fetch the log of job ${job_id}"
+            fi
+          done <<< "$failed"
+
+          # Telegram accepts 1-4096 characters; cut by characters, not bytes,
+          # so that a multi-byte character is never split.
+          if short=$(printf '%s' "$text" | jq -Rrs 'if length > 3500 then .[0:3499] + "…" else . end'); then
+            text="$short"
+          fi
+
+          if ! curl -fsS --retry 3 --retry-delay 2 -o /dev/null \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${text}"; then
+            echo "::warning::Could not deliver the Telegram notification"
+          fi
