@@ -8,7 +8,7 @@ Fork of [hydraponique/roscomvpn-geosite](https://github.com/hydraponique/roscomv
 
 Everything below is served from the `release` branch via jsDelivr and attached to every [GitHub Release](https://github.com/aireps/geosite/releases).
 
-The `release/` folder on `master` is not where this fork publishes: the build never writes to `master`, and the folder follows upstream through the merge — its `geosite.dat` is the upstream's file byte for byte. Use the `release` branch or the GitHub Releases.
+The `release/` folder on `master` is not where this fork publishes: the build never writes to `master`, and the folder is the upstream's build, byte for byte, kept in step by the merge. Use the `release` branch or the GitHub Releases.
 
 ### Xray / V2Ray
 
