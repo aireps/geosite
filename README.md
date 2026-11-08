@@ -54,6 +54,7 @@ Maintained here through the manifest:
 | `category-ip-geo-detect` | v2fly | IP geolocation services |
 | `ipip` | v2fly | Required by `category-ip-geo-detect` (`include:ipip`) |
 | `kinopoisk` | v2fly | Required by `yandex` (`include:kinopoisk`) |
+| `test-ipv6` | v2fly | Required by `category-ip-geo-detect` (`include:test-ipv6`) |
 | `vk` | v2fly | VK and Mail.ru services |
 | `yandex` | v2fly | Yandex services |
 

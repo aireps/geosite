@@ -51,6 +51,17 @@ sources:
     target: data/ipip
     min_bytes: 10
 
+  - name: test-ipv6
+    # Transitive dependency: data/category-ip-geo-detect contains
+    # `include:test-ipv6` since v2fly 8f1acdf6 (2026-10-26). Without
+    # data/test-ipv6 the geosite-builder fails on missing include.
+    type: github_raw
+    repo: v2fly/domain-list-community
+    ref: master
+    path: data/test-ipv6
+    target: data/test-ipv6
+    min_bytes: 190
+
   - name: yandex
     # Used in config-ru.json.j2 routing/DNS rules (geosite:yandex → direct).
     type: github_raw
