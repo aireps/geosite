@@ -50,19 +50,6 @@ jobs:
           DAILY_TAG=$(date +%Y%m%d%H%M)
           echo "DAILY_TAG=$DAILY_TAG" >> $GITHUB_ENV
 
-      - name: Create Tag
-        if: github.ref_name == 'master'
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const { DAILY_TAG } = process.env
-            await github.rest.git.createRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: `refs/tags/${DAILY_TAG}`,
-              sha: context.sha
-            })
-
       - name: Build geosite.dat
         run: |
           set -euo pipefail
@@ -316,6 +303,22 @@ jobs:
           git commit -m "Release ${{ env.DAILY_TAG }}"
           git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
           git push -f -u origin release
+
+      - name: Create Tag
+        # Right before the release, after the build and the push to the release
+        # branch: a tag created earlier stayed without a release whenever a
+        # later step failed.
+        if: github.ref_name == 'master'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { DAILY_TAG } = process.env
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/${DAILY_TAG}`,
+              sha: context.sha
+            })
 
       - name: MASTER Publish GitHub Release
         if: github.ref_name == 'master'
