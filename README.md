@@ -86,7 +86,7 @@ These lists hold base domains only, which is not a gap in coverage: a line with 
 
 Either sync triggers a build once something has actually changed. The build compiles the categories with [v2fly's generator](https://github.com/v2fly/domain-list-community), converts them into Mihomo and sing-box rule sets, pushes the result to the `release` branch and cuts a dated GitHub Release.
 
-One dead source does not hold up the rest: the sync records the failure, commits whatever it did fetch, and reports the run as failed at the end.
+One dead source does not hold up the rest: the sync records the failure, commits whatever it did fetch, and reports the run as failed at the end. The same holds for a source the generator would refuse: every fetched list is checked line by line against the generator's grammar, affiliations (`&list`) are not accepted at all, and an `include:` must name a target of the manifest that will exist after the run, without forming an include cycle. A list that fails any of this keeps its previous version, so one bad upstream change cannot break the build.
 
 ## License
 

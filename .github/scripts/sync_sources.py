@@ -3,7 +3,9 @@
 
 Reads the manifest at the repository root, downloads each source, and writes
 to its declared target under data/ only when the SHA256 differs from the
-existing file. Writes the list of changed targets to /tmp/changed.txt and
+existing file and its includes resolve: every included list is a manifest
+target that will exist after the run, with no include cycle. Writes the
+list of changed targets to /tmp/changed.txt and
 a per-file diff summary to /tmp/diff_summary.txt for the workflow to use
 in the commit body.
 """
@@ -315,6 +317,85 @@ def validate_domain_list(data: bytes) -> None:
             raise ValueError(f"line {lineno}: {exc}") from None
 
 
+def data_lists(sources: list[dict]) -> dict[str, str]:
+    """List name -> target for the manifest targets the generator reads, those directly in data/."""
+    return {
+        pathlib.PurePosixPath(src["target"]).name.upper(): src["target"]
+        for src in sources
+        if pathlib.PurePosixPath(src["target"]).parent == pathlib.PurePosixPath("data")
+    }
+
+
+def list_includes(data: bytes) -> list[str]:
+    """Names of the lists a payload includes, uppercased as the generator does."""
+    return [
+        fields[0].upper()
+        for _, rule_type, fields in _rules(data)
+        if rule_type == "include" and fields
+    ]
+
+
+def _cycle_through(start: str, graph: dict[str, list[str]]) -> list[str] | None:
+    """A path start -> ... -> start along includes, or None when start is on no cycle."""
+    stack = [(start, [start])]
+    seen: set[str] = set()
+    while stack:
+        node, path = stack.pop()
+        for include in graph.get(node, []):
+            if include == start:
+                return path + [start]
+            if include not in seen:
+                seen.add(include)
+                stack.append((include, path + [include]))
+    return None
+
+
+def resolve_includes(
+    candidates: dict[str, tuple[str, list[str]]],
+    manifest_lists: set[str],
+    on_disk: dict[str, list[str]],
+) -> dict[str, str]:
+    """Decide which new payloads may be written; return the refused ones with a reason.
+
+    candidates maps a source name to its list name and the lists its new
+    payload includes. manifest_lists are the list names of manifest targets in
+    data/. on_disk maps every list now in data/ to the lists it includes.
+
+    A payload is accepted when each include names a manifest list, so that a
+    v2fly file can never pull in an upstream category of the same name; when
+    that list exists after the run, because its file is already on disk (a
+    refused update keeps the old one) or its own payload is accepted; and when
+    the payload lies on no include cycle, which the generator rejects as a
+    circular inclusion. Refusing one payload can strand another or change a
+    cycle, so the checks repeat until nothing changes, whatever the manifest
+    order.
+    """
+    accepted = dict(candidates)
+    refused: dict[str, str] = {}
+    while True:
+        available = set(on_disk) | {list_name for list_name, _ in accepted.values()}
+        graph = dict(on_disk)
+        graph.update(accepted.values())
+        newly_refused: dict[str, str] = {}
+        for name, (list_name, includes) in accepted.items():
+            for include in includes:
+                if include not in manifest_lists:
+                    newly_refused[name] = f"include:{include.lower()} has no target in the manifest"
+                    break
+                if include not in available:
+                    newly_refused[name] = f"include:{include.lower()} would not exist after this run"
+                    break
+            else:
+                cycle = _cycle_through(list_name, graph)
+                if cycle:
+                    newly_refused[name] = "circular inclusion " + " -> ".join(c.lower() for c in cycle)
+        if not newly_refused:
+            return refused
+        refused.update(newly_refused)
+        for name in newly_refused:
+            del accepted[name]
+
+
 def write_atomic(target: pathlib.Path, data: bytes) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(prefix=target.name + ".", dir=target.parent)
@@ -350,6 +431,23 @@ def main() -> int:
     diff_lines: list[str] = []
     fallback_lines: list[str] = []
     failures: list[str] = []
+    # source name -> (target as declared, its path, new payload, diff line)
+    pending: dict[str, tuple[str, pathlib.Path, bytes, str]] = {}
+
+    lists = data_lists(sources)
+    list_of_target = {target: list_name for list_name, target in lists.items()}
+    data_dir = ROOT / "data"
+    on_disk: dict[str, list[str]] = {}
+    for path in sorted(data_dir.iterdir()) if data_dir.is_dir() else []:
+        if not path.is_file():
+            continue
+        try:
+            on_disk[path.name.upper()] = list_includes(path.read_bytes())
+        except ValueError as exc:
+            # A file already in data/ that the generator cannot read breaks the
+            # build whatever happens here; report it and keep syncing the rest.
+            failures.append(f"data/{path.name}: {exc}")
+            on_disk[path.name.upper()] = []
 
     for src in sources:
         name = src.get("name") or "<unnamed>"
@@ -380,7 +478,24 @@ def main() -> int:
             line = f"{target_rel}: {old_sha[:12]} -> {new_sha[:12]} ({len(data)} bytes)"
         else:
             line = f"{target_rel}: NEW {new_sha[:12]} ({len(data)} bytes)"
+        pending[name] = (target_rel, target, data, line)
 
+    # Only targets in data/ are lists the generator reads; a target elsewhere
+    # must not make a list of the same name look available.
+    refused = resolve_includes(
+        {
+            name: (list_of_target[target_rel], list_includes(data))
+            for name, (target_rel, _, data, _) in pending.items()
+            if target_rel in list_of_target
+        },
+        set(lists),
+        on_disk,
+    )
+    failures.extend(f"{name}: {reason}" for name, reason in refused.items())
+
+    for name, (target_rel, target, data, line) in pending.items():
+        if name in refused:
+            continue
         write_atomic(target, data)
         changed.append(target_rel)
         diff_lines.append(line)
