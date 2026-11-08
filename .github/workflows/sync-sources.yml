@@ -28,6 +28,11 @@ jobs:
       - name: Install deps
         run: pip install pyyaml requests
 
+      - name: Test the sync script
+        # A failing test stops the run before anything is fetched or committed,
+        # and the notify job reports it.
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+
       - name: Sync per manifest
         # Шаг не должен падать сразу: скрипт возвращает 1, если отказал хотя бы
         # один источник, а шелл по умолчанию идёт с `bash -e` и оборвал бы всё
@@ -64,6 +69,10 @@ jobs:
         if: env.has_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Name the repository: otherwise gh takes it from the git remotes, and
+          # in sync-upstream.yml, which adds an upstream remote, the dispatch
+          # went to the upstream repository and failed with HTTP 403.
+          GH_REPO: ${{ github.repository }}
         run: |
           for attempt in 1 2 3; do
             echo "Attempt ${attempt}: triggering build.yml on master..."
