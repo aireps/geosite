@@ -48,7 +48,7 @@ jobs:
         if: github.ref_name == 'master'
         run: |
           DAILY_TAG=$(date +%Y%m%d%H%M)
-          echo "DAILY_TAG=$DAILY_TAG" >> $GITHUB_ENV
+          echo "DAILY_TAG=$DAILY_TAG" >> "$GITHUB_ENV"
 
       - name: Build geosite.dat
         run: |
@@ -207,7 +207,7 @@ jobs:
               }
             ' "$f" > "$tmp"
 
-            rel="${f#$work/}"
+            rel="${f#"$work"/}"
             rel_noext="${rel%.*}"
             dest="$out/${rel_noext}.mrs"
             mkdir -p "$(dirname "$dest")"
@@ -265,7 +265,7 @@ jobs:
               | if (.rules[0] | length) == 0 then .rules = [] else . end
             ' > "$tmp_json"
 
-            rel="${f#$src/}"
+            rel="${f#"$src"/}"
             rel_noext="${rel%.*}"
             dest="$out/${rel_noext}.srs"
             mkdir -p "$(dirname "$dest")"
