@@ -12,8 +12,10 @@ from __future__ import annotations
 import hashlib
 import os
 import pathlib
+import re
 import sys
 import tempfile
+from collections.abc import Iterator
 
 import requests
 import yaml
@@ -25,6 +27,15 @@ DIFF_LOG = pathlib.Path("/tmp/diff_summary.txt")
 TIMEOUT_SECONDS = 30
 MARKUP_PREFIXES = (b"<!doctype", b"<html", b"<?xml")
 ALLOWED_DOMAIN_BYTES = frozenset(b"abcdefghijklmnopqrstuvwxyz0123456789.-")
+# Character sets and limits of the v2fly generator (main.go: validateSiteName,
+# validateAttrChars, maxDomainLen, maxLabelLen).
+SITE_NAME_BYTES = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!-")
+ATTRIBUTE_BYTES = frozenset(b"abcdefghijklmnopqrstuvwxyz0123456789!")
+MAX_DOMAIN_LENGTH = 253
+MAX_LABEL_LENGTH = 63
+# The generator reads lists with a default bufio.Scanner, which fails with
+# "token too long" on any line of 64 KiB or more, a comment included.
+MAX_LINE_BYTES = 64 * 1024
 KNOWN_RULE_TYPES = frozenset({"domain", "full", "keyword", "regexp"})
 MANIFEST_COMMON_KEYS = frozenset(
     {"name", "type", "target", "min_bytes", "fallback_urls"}
@@ -170,13 +181,115 @@ def fetch_source(src: dict, min_bytes: int = 0) -> tuple[bytes, str, list[str]]:
     raise RuntimeError("all URLs failed: " + " | ".join(errors))
 
 
+def _rules(data: bytes) -> Iterator[tuple[int, str, list[str]]]:
+    """Yield (line number, rule type, fields) for every rule, as the generator reads them.
+
+    v2fly main.go: lines are split on '\\n', a line is cut at the first '#' and
+    trimmed, the type is the part before the first ':' lowercased and defaults
+    to "domain" when there is no ':', and the rest is split on whitespace.
+    Raises ValueError on a line the generator's scanner cannot read at all.
+    """
+    for lineno, raw in enumerate(data.split(b"\n"), 1):
+        if len(raw) >= MAX_LINE_BYTES:
+            raise ValueError(
+                f"line {lineno}: {len(raw)} bytes, the generator reads at most {MAX_LINE_BYTES - 1}"
+            )
+        line = raw.decode("utf-8", errors="surrogateescape").split("#", 1)[0].strip()
+        if not line:
+            continue
+        head, separator, tail = line.partition(":")
+        rule_type, rule = (head.lower(), tail) if separator else ("domain", line)
+        yield lineno, rule_type, rule.split()
+
+
+def _has_only(value: str, allowed: frozenset[int], case=str.lower) -> bool:
+    """value is non-empty ASCII and, once case-mapped, made of allowed bytes only.
+
+    ASCII is required before the case mapping because Python and Go map case
+    differently outside it: Python turns 'ß' into 'SS', which would pass as a
+    list name the generator rejects. Refusing non-ASCII up front leaves only
+    differences in the safe direction, see validate_domain_list.
+    """
+    return bool(value) and value.isascii() and allowed.issuperset(case(value).encode())
+
+
+def _is_domain_name(value: str) -> bool:
+    """main.go validateDomainName: allowed characters, total length, and labels
+    that are non-empty, short enough and neither start nor end with '-'."""
+    if not _has_only(value, ALLOWED_DOMAIN_BYTES) or len(value) > MAX_DOMAIN_LENGTH:
+        return False
+    return all(
+        label and len(label) <= MAX_LABEL_LENGTH and label[0] != "-" and label[-1] != "-"
+        for label in value.split(".")
+    )
+
+
+def _check_inclusion(fields: list[str]) -> None:
+    """main.go parseInclusion: a list name, then only @attr and @-attr fields."""
+    if not fields:
+        raise ValueError("empty inclusion")
+    if not _has_only(fields[0], SITE_NAME_BYTES, case=str.upper):
+        raise ValueError(f"invalid included list name {fields[0]!r}")
+    for field in fields[1:]:
+        if field[0] == "@":
+            if not _has_only(field[1:].removeprefix("-"), ATTRIBUTE_BYTES):
+                raise ValueError(f"invalid inclusion attribute {field!r}")
+        elif field[0] == "&":
+            raise ValueError("affiliation is not allowed for inclusion")
+        else:
+            raise ValueError(f"unknown field {field!r}")
+
+
+def _check_entry(rule_type: str, fields: list[str]) -> None:
+    """main.go parseEntry, plus one rule of our own: no affiliations."""
+    if not fields:
+        raise ValueError("empty rule")
+    value = fields[0]
+    if rule_type == "regexp":
+        try:
+            re.compile(value)
+        except re.error as exc:
+            raise ValueError(f"invalid regexp {value!r}: {exc}") from None
+    elif rule_type == "keyword":
+        if not _has_only(value, ALLOWED_DOMAIN_BYTES):
+            raise ValueError(f"invalid keyword {value!r}")
+    elif not _is_domain_name(value):
+        raise ValueError(f"invalid domain {value!r}")
+    for field in fields[1:]:
+        if field[0] == "@":
+            if not _has_only(field[1:], ATTRIBUTE_BYTES):
+                raise ValueError(f"invalid attribute {field!r}")
+        elif field[0] == "&":
+            # The generator accepts a well-formed affiliation and adds the entry
+            # to another list, which here could be a category inherited from
+            # upstream that the consumers route on. A synced source must not
+            # reach into other lists, so the field is refused outright.
+            raise ValueError(f"affiliation {field!r} is not allowed in a synced list")
+        else:
+            raise ValueError(f"unknown field {field!r}")
+
+
 def validate_domain_list(data: bytes) -> None:
     """Reject a payload the geosite generator would refuse to parse.
 
-    Mirrors the line handling in v2fly/domain-list-community: a line is cut at
-    the first '#', a leading '<type>:' selects the rule type and its absence
-    means "domain", and every rule but a regexp is lowercased and then checked
-    byte by byte against a-z, 0-9, '.' and '-'.
+    Mirrors the per-line checks of v2fly/domain-list-community main.go
+    (parseEntry, parseInclusion, the validate* helpers and the scanner's line
+    length): rule types, domain names with their length and label rules,
+    keyword characters, attribute and list-name characters, inclusion syntax,
+    and unknown fields. Affiliations are refused on top of that, see
+    _check_entry.
+
+    Known differences, all but one in the safe direction:
+    - non-ASCII is refused before any case mapping, while Go's simple case
+      mapping turns a few non-ASCII letters into ASCII ones and accepts them
+      (dotless 'ı', dotted 'İ', the Kelvin sign);
+    - regexps are compiled with Python's re, while the generator uses Go's
+      RE2. RE2 accepts constructs such as \\p{...} that re rejects, which is
+      safe. re accepts lookarounds and backreferences that RE2 rejects, which
+      is not, but cannot reach us from v2fly, whose own CI builds every push
+      with the generator.
+    A refusal in the safe direction keeps the previous file and reports the
+    line.
 
     Worth the duplication because of how the generator reacts: the first bad
     line makes it return an error and abandon the run, so one stray character
@@ -186,29 +299,20 @@ def validate_domain_list(data: bytes) -> None:
 
     Running the real generator would remove the risk of this copy drifting, and
     it is not even slow, but it reads data/ as a whole and would therefore block
-    all seven sources over one bad file. Per-source isolation is worth more than
+    every source over one bad file. Per-source isolation is worth more than
     exactness here, and drift is not silent either way: too strict and the sync
     fails naming the file and line, too lax and the build fails as it used to.
     """
-    text = data.decode("utf-8", errors="surrogateescape")
-    for lineno, raw in enumerate(text.splitlines(), 1):
-        line = raw.split("#", 1)[0].strip()
-        if not line:
-            continue
-        head, separator, tail = line.partition(":")
-        rule_type, rule = (head.lower(), tail) if separator else ("domain", line)
-        if rule_type == "include":
-            continue
-        if rule_type not in KNOWN_RULE_TYPES:
-            raise ValueError(f"line {lineno}: unknown rule type {rule_type!r}")
-        fields = rule.split()
-        if not fields:
-            raise ValueError(f"line {lineno}: empty rule")
-        if rule_type == "regexp":
-            continue
-        value = fields[0].lower().encode("utf-8", errors="surrogateescape")
-        if not ALLOWED_DOMAIN_BYTES.issuperset(value):
-            raise ValueError(f"line {lineno}: invalid domain {fields[0]!r}")
+    for lineno, rule_type, fields in _rules(data):
+        try:
+            if rule_type == "include":
+                _check_inclusion(fields)
+            elif rule_type in KNOWN_RULE_TYPES:
+                _check_entry(rule_type, fields)
+            else:
+                raise ValueError(f"unknown rule type {rule_type!r}")
+        except ValueError as exc:
+            raise ValueError(f"line {lineno}: {exc}") from None
 
 
 def write_atomic(target: pathlib.Path, data: bytes) -> None:
