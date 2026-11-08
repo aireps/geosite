@@ -32,7 +32,7 @@
 # markup check is what actually guards them.
 sources:
   - name: category-ip-geo-detect
-    # IP geolocation domains, used in xray_sub_formats.py DirectSites.
+    # IP geolocation services.
     # Was a static local copy; now refreshed from v2fly upstream.
     type: github_raw
     repo: v2fly/domain-list-community
@@ -100,9 +100,10 @@ sources:
 
   - name: category-ads
     # Ad/tracking blocklist from hagezi (Light by default).
-    # ~42k base domains, daily updates. Self-contained flat list, no includes.
-    # To switch to a wider tier: multi-onlydomains (~181k), pro-onlydomains
-    # (~216k) or pro.plus-onlydomains (~239k) in the same directory.
+    # Base domains, daily updates. Self-contained flat list, no includes. The
+    # current size is the "Number of entries" line in the file header.
+    # To switch to a wider tier: multi-onlydomains, pro-onlydomains or
+    # pro.plus-onlydomains in the same directory.
     # Source: https://github.com/hagezi/dns-blocklists
     #
     # Upstream removed the domains/ directory around 31 Jul 2026, which broke

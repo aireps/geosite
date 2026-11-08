@@ -8,6 +8,8 @@ Fork of [hydraponique/roscomvpn-geosite](https://github.com/hydraponique/roscomv
 
 Everything below is served from the `release` branch via jsDelivr and attached to every [GitHub Release](https://github.com/aireps/geosite/releases).
 
+The `release/` folder on `master` is not where this fork publishes: the build never writes to `master`, and the folder follows upstream through the merge — its `geosite.dat` is the upstream's file byte for byte. Use the `release` branch or the GitHub Releases.
+
 ### Xray / V2Ray
 
 ```
@@ -15,12 +17,12 @@ https://cdn.jsdelivr.net/gh/aireps/geosite@release/geosite.dat
 https://cdn.jsdelivr.net/gh/aireps/geosite@release/geosite-lite.dat
 ```
 
-| File | Size | Contents |
-|---|---|---|
-| `geosite.dat` | ~1 MiB | All categories |
-| `geosite-lite.dat` | ~75 KiB | Everything except `category-ads` |
+| File | Contents |
+|---|---|
+| `geosite.dat` | All categories |
+| `geosite-lite.dat` | Everything except `category-ads` |
 
-The lite build is for clients sitting behind a server that already filters ads, so they do not need to carry the blocklist themselves — that one category is the whole difference in size. Each file has a `.sha256` next to it.
+The lite build is for clients sitting behind a server that already filters ads, so they do not need to carry the blocklist themselves — that one category is the whole difference in size. Each file has a `.sha256` next to it, and every GitHub Release shows the size of each file.
 
 Drop the file into Xray's asset directory (`/usr/local/share/xray/` by default) and reference a category by name:
 
@@ -64,13 +66,15 @@ Inherited from upstream: `apple`, `category-geoblock-ru`, `category-ru`, `epicga
 
 `category-ads` follows hagezi's Light tier, which covers the common ad and tracking hosts and stays conservative about false positives. Heavier tiers are drop-in replacements:
 
-| Tier | Domains | Path in `hagezi/dns-blocklists` |
-|---|---|---|
-| Light (current) | ~42k | `wildcard/light-onlydomains.txt` |
-| Multi | ~181k | `wildcard/multi-onlydomains.txt` |
-| Pro | ~216k | `wildcard/pro-onlydomains.txt` |
-| Pro++ | ~239k | `wildcard/pro.plus-onlydomains.txt` |
-| Ultimate | ~263k | `wildcard/ultimate-onlydomains.txt` |
+| Tier | Path in `hagezi/dns-blocklists` |
+|---|---|
+| Light (current) | `wildcard/light-onlydomains.txt` |
+| Multi | `wildcard/multi-onlydomains.txt` |
+| Pro | `wildcard/pro-onlydomains.txt` |
+| Pro++ | `wildcard/pro.plus-onlydomains.txt` |
+| Ultimate | `wildcard/ultimate-onlydomains.txt` |
+
+Each list states its current size in the `Number of entries` line of its header. The numbers change from day to day, so they are not repeated here.
 
 To switch, change `path:` on the `category-ads` entry in [`sources.yaml`](sources.yaml), push to `master`, then run `sync-sources.yml`. The category name stays the same, so nothing downstream has to change.
 
@@ -87,6 +91,8 @@ These lists hold base domains only, which is not a gap in coverage: a line with 
 Either sync triggers a build once something has actually changed. The build compiles the categories with [v2fly's generator](https://github.com/v2fly/domain-list-community), converts them into Mihomo and sing-box rule sets, pushes the result to the `release` branch and cuts a dated GitHub Release.
 
 One dead source does not hold up the rest: the sync records the failure, commits whatever it did fetch, and reports the run as failed at the end. The same holds for a source the generator would refuse: every fetched list is checked line by line against the generator's grammar, affiliations (`&list`) are not accepted at all, and an `include:` must name a target of the manifest that will exist after the run, without forming an include cycle. A list that fails any of this keeps its previous version, so one bad upstream change cannot break the build.
+
+Before fetching anything, `sync-sources.yml` runs the unit tests of the sync script, and a failing test stops the run. When any of the three workflows fails, [`notify-failure.yml`](.github/workflows/notify-failure.yml) sends a Telegram message that names the failed job and step and quotes the error lines from that job's log.
 
 ## License
 
