@@ -336,6 +336,8 @@ jobs:
             release/*.tar.gz
 
       - name: MASTER Purge CDN for release and updated master branches
+        # No purge for the @<tag> paths: a tag is an exact version, and per the
+        # jsDelivr README purging "does not affect exact-version links".
         if: github.ref_name == 'master'
         run: |
           set -euo pipefail
@@ -345,7 +347,6 @@ jobs:
             ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}/release/${rel}"
             ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@master/release/${rel}"
             ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@release/${rel}"
-            ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@${{ env.DAILY_TAG }}/release/${rel}"
           done
 
       - name: TEST Prepare release directory
